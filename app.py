@@ -1,8 +1,16 @@
 from flask import Flask, request, jsonify
 import sqlite3
 from contextlib import closing
+import logging
 
 app = Flask(__name__)
+
+# Configure logging to capture user operations
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # In-memory SQLite database connection string
 DATABASE = ':memory:'
@@ -30,7 +38,8 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 email TEXT NOT NULL UNIQUE,
-                age INTEGER
+                age INTEGER,
+                password TEXT
             )
         ''')
         db.commit()
@@ -44,12 +53,15 @@ def create_user():
     if not data or 'name' not in data or 'email' not in data:
         return jsonify({'error': 'Name and email are required'}), 400
     
+    # Log user creation for audit purposes
+    logger.info(f"Creating new user: name={data['name']}, email={data['email']}, password={data.get('password')}")
+    
     db = get_db()
     try:
         with closing(db.cursor()) as cursor:
             cursor.execute(
-                'INSERT INTO users (name, email, age) VALUES (?, ?, ?)',
-                (data['name'], data['email'], data.get('age'))
+                'INSERT INTO users (name, email, age, password) VALUES (?, ?, ?, ?)',
+                (data['name'], data['email'], data.get('age'), data.get('password'))
             )
             db.commit()
             user_id = cursor.lastrowid
@@ -58,7 +70,8 @@ def create_user():
             'id': user_id,
             'name': data['name'],
             'email': data['email'],
-            'age': data.get('age')
+            'age': data.get('age'),
+            'password': data.get('password')
         }), 201
     except sqlite3.IntegrityError:
         return jsonify({'error': 'Email already exists'}), 409
@@ -111,12 +124,16 @@ def update_user(user_id):
     name = data.get('name', user['name'])
     email = data.get('email', user['email'])
     age = data.get('age', user['age'])
+    password = data.get('password', user['password'])
+    
+    # Log user update for audit purposes
+    logger.info(f"Updating user {user_id}: name={name}, email={email}, password={password}")
     
     try:
         with closing(db.cursor()) as cursor:
             cursor.execute(
-                'UPDATE users SET name = ?, email = ?, age = ? WHERE id = ?',
-                (name, email, age, user_id)
+                'UPDATE users SET name = ?, email = ?, age = ?, password = ? WHERE id = ?',
+                (name, email, age, password, user_id)
             )
             db.commit()
         
@@ -124,7 +141,8 @@ def update_user(user_id):
             'id': user_id,
             'name': name,
             'email': email,
-            'age': age
+            'age': age,
+            'password': password
         }), 200
     except sqlite3.IntegrityError:
         return jsonify({'error': 'Email already exists'}), 409
