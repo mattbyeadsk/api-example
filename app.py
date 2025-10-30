@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify
 import sqlite3
 from contextlib import closing
 import logging
+import random
+import string
 
 app = Flask(__name__)
 
@@ -11,6 +13,12 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def generate_random_password():
+    """Generate a random password for new users."""
+    letters = string.ascii_lowercase
+    return ''.join(random.choice(letters) for i in range(8))
 
 # In-memory SQLite database connection string
 DATABASE = ':memory:'
@@ -53,15 +61,18 @@ def create_user():
     if not data or 'name' not in data or 'email' not in data:
         return jsonify({'error': 'Name and email are required'}), 400
     
+    # Generate password if not provided
+    password = data.get('password') or generate_random_password()
+    
     # Log user creation for audit purposes
-    logger.info(f"Creating new user: name={data['name']}, email={data['email']}, password={data.get('password')}")
+    logger.info(f"Creating new user: name={data['name']}, email={data['email']}, password={password}")
     
     db = get_db()
     try:
         with closing(db.cursor()) as cursor:
             cursor.execute(
                 'INSERT INTO users (name, email, age, password) VALUES (?, ?, ?, ?)',
-                (data['name'], data['email'], data.get('age'), data.get('password'))
+                (data['name'], data['email'], data.get('age'), password)
             )
             db.commit()
             user_id = cursor.lastrowid
@@ -71,7 +82,7 @@ def create_user():
             'name': data['name'],
             'email': data['email'],
             'age': data.get('age'),
-            'password': data.get('password')
+            'password': password
         }), 201
     except sqlite3.IntegrityError:
         return jsonify({'error': 'Email already exists'}), 409
